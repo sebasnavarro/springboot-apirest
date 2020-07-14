@@ -1,5 +1,9 @@
 package com.lilblue.springboot.backend.apirest.controller;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +24,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
+import org.springframework.web.multipart.MultipartFile;
 import com.lilblue.springboot.backend.apirest.models.entity.Cliente;
 import com.lilblue.springboot.backend.apirest.models.service.IClienteService;
 
@@ -37,7 +42,7 @@ public class ClienteRestController {
 	public List<Cliente> index() {
 		return clienteService.findAll();
 	}
-	
+
 	@GetMapping("/clientes/page/{page}")
 	public Page<Cliente> index(@PathVariable Integer page) {
 		return clienteService.findAll(PageRequest.of(page, 4));
@@ -68,18 +73,15 @@ public class ClienteRestController {
 	public ResponseEntity<?> create(@Valid @RequestBody Cliente cliente, BindingResult result) {
 		Cliente clienteNew = null;
 		Map<String, Object> response = new HashMap<>();
-		
-		if(result.hasErrors()) {
-			List<String> errors = result.getFieldErrors()
-					.stream()
-					.map(err -> "El campo '" +err.getField() +"' "+err.getDefaultMessage())
+
+		if (result.hasErrors()) {
+			List<String> errors = result.getFieldErrors().stream()
+					.map(err -> "El campo '" + err.getField() + "' " + err.getDefaultMessage())
 					.collect(Collectors.toList());
 			response.put("errors", errors);
 			return new ResponseEntity<Map<String, Object>>(response, HttpStatus.BAD_REQUEST);
 		}
-		
-		
-		
+
 		try {
 			clienteNew = clienteService.save(cliente);
 
@@ -98,27 +100,28 @@ public class ClienteRestController {
 		Cliente clienteActual = clienteService.findById(id);
 		Cliente clienteUpdate = null;
 		Map<String, Object> response = new HashMap<>();
-		
-		if(result.hasErrors()) {
-			List<String> errors = result.getFieldErrors()
-					.stream()
-					.map(err -> "El campo '" +err.getField() +"' "+err.getDefaultMessage())
+
+		if (result.hasErrors()) {
+			List<String> errors = result.getFieldErrors().stream()
+					.map(err -> "El campo '" + err.getField() + "' " + err.getDefaultMessage())
 					.collect(Collectors.toList());
 			response.put("errors", errors);
 			return new ResponseEntity<Map<String, Object>>(response, HttpStatus.BAD_REQUEST);
 		}
 
 		if (clienteActual == null) {
-			response.put("mensaje", "Error: no se pudo editar, el cliente ID: ".concat(id.toString().concat(" no existe en la base de datos!")));
+			response.put("mensaje", "Error: no se pudo editar, el cliente ID: "
+					.concat(id.toString().concat(" no existe en la base de datos!")));
 			return new ResponseEntity<Map<String, Object>>(response, HttpStatus.NOT_FOUND);
-		}try{
+		}
+		try {
 
 			clienteActual.setApellido(cliente.getApellido());
 			clienteActual.setNombre(cliente.getNombre());
 			clienteActual.setEmail(cliente.getEmail());
 			clienteActual.setCreateAt(cliente.getCreateAt());
 			clienteUpdate = clienteService.save(clienteActual);
-		}catch (DataAccessException e){
+		} catch (DataAccessException e) {
 			response.put("mensaje", "Error al actualizar el cliente en la base de datos");
 			response.put("error", e.getMessage().concat(": ").concat(e.getMostSpecificCause().getMessage()));
 			return new ResponseEntity<Map<String, Object>>(response, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -133,13 +136,37 @@ public class ClienteRestController {
 		Map<String, Object> response = new HashMap<>();
 		try {
 			clienteService.delete(id);
-		}catch (DataAccessException e){
+		} catch (DataAccessException e) {
 			response.put("mensaje", "Error al eliminar el cliente en la base de datos");
 			response.put("error", e.getMessage().concat(": ").concat(e.getMostSpecificCause().getMessage()));
 			return new ResponseEntity<Map<String, Object>>(response, HttpStatus.INTERNAL_SERVER_ERROR);
 		}
 		response.put("mensaje", "El cliente eliminado con éxito!");
+
+		return new ResponseEntity<Map<String, Object>>(response, HttpStatus.OK);
+	}
+	
+	@PostMapping("/clientes/upload")
+	public ResponseEntity<?>upload(@RequestParam("archivo") MultipartFile archivo, @RequestParam("id") Long id){
+		Map<String, Object> response = new HashMap<>();
+		Cliente cliente = clienteService.findById(id);
 		
-		return new ResponseEntity<Map<String, Object>>(response,HttpStatus.OK);
+		if(!archivo.isEmpty()) {
+			String nombreArchivo = archivo.getOriginalFilename();
+			Path rutaArchivo = Paths.get("uploads").resolve(nombreArchivo).toAbsolutePath();
+			
+			try {
+				Files.copy(archivo.getInputStream(), rutaArchivo);
+			}catch(IOException e) {
+				response.put("mensaje", "Error al subir la imagen del cliente " +nombreArchivo);
+				response.put("error", e.getMessage().concat(": ").concat(e.getCause().getMessage()));
+				return new ResponseEntity<Map<String, Object>>(response, HttpStatus.INTERNAL_SERVER_ERROR);		
+			}
+			cliente.setFoto(nombreArchivo);
+			clienteService.save(cliente);
+			response.put("cliente", cliente);
+			response.put("mensaje", "Has subido correctamente la imagen: " + nombreArchivo);
+		}		
+		return new ResponseEntity<Map<String, Object>>(response, HttpStatus.OK);		
 	}
 }
